@@ -8,6 +8,12 @@ const store = require('./store');
 const fs = require('fs');
 const path = require('path');
 
+// Les messages des bots musicaux sont nettoyés automatiquement après 30 s.
+// Rythm reste configurable et Inazuma Music est inclus par défaut.
+const RYTHM_BOT_ID = process.env.RYTHM_BOT_ID || '235088799074484224';
+const MUSIC_BOT_IDS = new Set([RYTHM_BOT_ID, '1504302353501782116']);
+const RYTHM_MESSAGE_LIFETIME_MS = 30_000;
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -178,6 +184,24 @@ function inferProtectedUser(message) {
   if (!previous || message.createdTimestamp - previous.createdTimestamp > 120000) return null;
   return candidates.includes(previous.author.id) ? previous.author.id : null;
 }
+
+// Seuls les messages provenant des bots musicaux listés sont concernés.
+// Les autres bots et les membres ne passent jamais dans ce bloc.
+client.on('messageCreate', (message) => {
+  if (!message.inGuild() || !MUSIC_BOT_IDS.has(message.author.id)) return;
+
+  setTimeout(async () => {
+    try {
+      if (message.deletable) await message.delete();
+      else console.warn(`[Nettoyage musique] Permission de suppression manquante dans #${message.channel.name}`);
+    } catch (err) {
+      // Le message a pu être supprimé manuellement pendant les 30 secondes.
+      if (err.code !== 10008) {
+        console.error(`[Nettoyage musique] Suppression impossible dans #${message.channel.name} : ${err.message}`);
+      }
+    }
+  }, RYTHM_MESSAGE_LIFETIME_MS);
+});
 
 client.on('messageCreate', async (message) => {
   if (!message.inGuild() || message.author.bot) return;
