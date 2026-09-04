@@ -733,7 +733,10 @@ async function handleSelect(interaction) {
   const embed = baseEmbed(gid)
     .setTitle(`${type.emoji || ''} ${type.label}`.trim())
     .setDescription(c.welcomeMessage)
-    .addFields({ name: 'Ouvert par', value: `${interaction.user}`, inline: true })
+    .addFields(
+      { name: 'Catégorie', value: `${type.emoji ? `${type.emoji} ` : ''}${type.label}`, inline: true },
+      { name: 'Ouvert par', value: `${interaction.user}`, inline: true },
+    )
     .setThumbnail(interaction.user.displayAvatarURL());
 
   const row = new ActionRowBuilder().addComponents(
