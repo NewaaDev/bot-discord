@@ -8,10 +8,10 @@ const store = require('./store');
 const fs = require('fs');
 const path = require('path');
 
-// Les messages des bots musicaux sont nettoyés automatiquement après 30 s.
-// Rythm reste configurable et Inazuma Music est inclus par défaut.
+// Seuls les messages temporaires de Rythm sont nettoyés après 30 s.
+// Les annonces et messages d'Inazuma Music doivent rester visibles.
 const RYTHM_BOT_ID = process.env.RYTHM_BOT_ID || '235088799074484224';
-const MUSIC_BOT_IDS = new Set([RYTHM_BOT_ID, '1504302353501782116']);
+const MUSIC_BOT_IDS = new Set([RYTHM_BOT_ID]);
 const RYTHM_MESSAGE_LIFETIME_MS = 30_000;
 
 const client = new Client({
