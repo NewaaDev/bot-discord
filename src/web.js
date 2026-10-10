@@ -4,6 +4,7 @@ const path = require('path');
 const { PermissionFlagsBits, ChannelType } = require('discord.js');
 
 const store = require('./store');
+const fortnite = require('./fortnite');
 const { client, applyPresence, panelMessage, parseTopic, closeTicket, formatUptime } = require('./bot');
 
 const multer = require('multer');
@@ -214,6 +215,15 @@ app.put('/api/g/:guildId/config', requireGuild, (req, res) => {
     if (welcome.roleId && (!role || role.managed)) return res.status(400).json({ erreur: 'Choisis un rôle de bienvenue valide.' });
     if (welcome.embed?.color && !/^#[0-9a-f]{6}$/i.test(welcome.embed.color)) return res.status(400).json({ erreur: "La couleur de l'embed doit être au format #RRGGBB." });
   }
+  const fortniteConfig = req.body?.fortnite;
+  if (fortniteConfig) {
+    const validRegions = ['EU', 'NAC', 'NAW', 'OCE', 'BR', 'ASIA', 'ME'];
+    if (!validRegions.includes(fortniteConfig.region)) return res.status(400).json({ erreur: 'Région Fortnite invalide.' });
+    for (const field of ['upcomingChannelId', 'resultsChannelId', 'playerChannelId']) {
+      const channel = fortniteConfig[field] && req.guild.channels.cache.get(fortniteConfig[field]);
+      if (fortniteConfig.enabled && !channel?.isTextBased()) return res.status(400).json({ erreur: 'Choisis les trois salons Fortnite.' });
+    }
+  }
   res.json(store.set(req.params.guildId, req.body));
 });
 
@@ -235,6 +245,7 @@ app.post('/api/g/:guildId/config/copy', requireGuild, (req, res) => {
     ticket: { ...src.ticket, categoryId: null, staffRoleId: null, logChannelId: null },
     appearance: { ...src.appearance },
     moderation: { ...src.moderation, logChannelId: null },
+    fortnite: { ...src.fortnite, upcomingChannelId: null, resultsChannelId: null, playerChannelId: null, mentionRoleId: null, enabled: false },
   };
 
   res.json(store.set(req.params.guildId, copie));
@@ -314,6 +325,69 @@ app.post('/api/g/:guildId/panel/send', requireGuild, async (req, res) => {
   } catch (err) {
     res.status(500).json({ erreur: err.message });
   }
+});
+
+// ─────────────────────────────────────────────
+//  FORTNITE COMPÉTITIF
+// ─────────────────────────────────────────────
+app.get('/api/g/:guildId/fortnite/status', requireGuild, (req, res) => {
+  const account = fortnite.getEpicAccount(req.params.guildId, req.session.user.id);
+  res.json({ apiConfigured: fortnite.apiConfigured(), epic: account ? { displayName: account.displayName, accountId: account.accountId, linkedAt: account.linkedAt } : null });
+});
+
+app.post('/api/g/:guildId/fortnite/channels', requireGuild, async (req, res) => {
+  const g = req.guild;
+  if (!g.members.me.permissions.has(PermissionFlagsBits.ManageChannels)) return res.status(403).json({ erreur: 'Le bot doit avoir la permission Gérer les salons.' });
+  try {
+    let category = g.channels.cache.find(c => c.type === ChannelType.GuildCategory && c.name === '🏆・FORTNITE');
+    if (!category) category = await g.channels.create({ name: '🏆・FORTNITE', type: ChannelType.GuildCategory, reason: `Configuration demandée par ${req.session.user.username}` });
+    const ensure = async (name, topic) => {
+      let channel = g.channels.cache.find(c => c.type === ChannelType.GuildText && c.parentId === category.id && c.name === name);
+      if (!channel) channel = await g.channels.create({ name, type: ChannelType.GuildText, parent: category.id, topic, reason: `Configuration demandée par ${req.session.user.username}` });
+      return channel;
+    };
+    const upcoming = await ensure('📅・cups-fortnite', 'Calendrier et rappels automatiques des cups Fortnite.');
+    const results = await ensure('🏆・classements-cups', 'Classements finaux automatiques des cups Fortnite.');
+    const player = await ensure('🎯・classement-perso', 'Power Ranking des membres ayant lié leur compte Epic.');
+    const config = store.set(g.id, { fortnite: { upcomingChannelId: upcoming.id, resultsChannelId: results.id, playerChannelId: player.id } });
+    res.json({ ok: true, config, channels: { upcomingChannelId: upcoming.id, resultsChannelId: results.id, playerChannelId: player.id } });
+  } catch (err) { res.status(500).json({ erreur: err.message }); }
+});
+
+app.post('/api/g/:guildId/fortnite/test', requireGuild, async (req, res) => {
+  if (!fortnite.apiConfigured()) return res.status(503).json({ erreur: 'FORTNITE_API_KEY manque sur OnePanel.' });
+  try { await fortnite.poll(client); res.json({ ok: true }); }
+  catch (err) { res.status(500).json({ erreur: err.message }); }
+});
+
+app.post('/api/g/:guildId/fortnite/epic/start', requireGuild, async (req, res) => {
+  try {
+    const flow = await fortnite.beginEpicLink();
+    req.session.epicFlow = { guildId: req.params.guildId, flowId: flow.flowId || flow.id };
+    res.json({ flowId: flow.flowId || flow.id, url: flow.verificationUriComplete || flow.verification_uri_complete || flow.url, code: flow.userCode || flow.user_code, expiresIn: flow.expiresIn || flow.expires_in });
+  } catch (err) { res.status(err.status || 500).json({ erreur: err.message }); }
+});
+
+app.post('/api/g/:guildId/fortnite/epic/complete', requireGuild, async (req, res) => {
+  const flow = req.session.epicFlow;
+  if (!flow || flow.guildId !== req.params.guildId) return res.status(400).json({ erreur: 'Liaison Epic expirée, recommence.' });
+  try {
+    const result = await fortnite.completeEpicLink(flow.flowId);
+    const epic = fortnite.saveEpicAccount(req.params.guildId, req.session.user.id, result);
+    delete req.session.epicFlow;
+    const ranking = await fortnite.publishPlayerRanking(req.guild, req.session.user.id).catch(() => null);
+    res.json({ ok: true, epic, ranking });
+  } catch (err) {
+    const pending = err.status === 202 || err.status === 429 || /pending|authorization/i.test(err.message);
+    res.status(pending ? 202 : (err.status || 500)).json({ pending, erreur: pending ? 'Autorisation Epic en attente.' : err.message });
+  }
+});
+
+app.delete('/api/g/:guildId/fortnite/epic', requireGuild, (req, res) => res.json({ ok: fortnite.unlinkEpic(req.params.guildId, req.session.user.id) }));
+
+app.post('/api/g/:guildId/fortnite/ranking', requireGuild, async (req, res) => {
+  try { res.json(await fortnite.publishPlayerRanking(req.guild, req.session.user.id)); }
+  catch (err) { res.status(err.status || 500).json({ erreur: err.message }); }
 });
 
 app.use(express.static(path.join(__dirname, '..', 'public')));

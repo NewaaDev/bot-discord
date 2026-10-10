@@ -398,6 +398,7 @@ const commands = [
 client.once('clientReady', async () => {
   console.log(`✅ Bot connecté : ${client.user.tag}`);
   applyPresence();
+  require('./fortnite').start(client);
 
   // Les commandes sont enregistrées sur chaque serveur où le bot est présent
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);

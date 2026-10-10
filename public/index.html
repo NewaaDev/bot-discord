@@ -46,6 +46,7 @@
       <button class="nav-item" data-view="welcome">Bienvenue</button>
       <button class="nav-item" data-view="panel">Panneau</button>
       <button class="nav-item" data-view="appearance">Apparence</button>
+      <button class="nav-item" data-view="fortnite">Fortnite</button>
       <button class="nav-item" data-view="bot">Présence</button>
     </nav>
 
@@ -291,6 +292,33 @@
             <option value="dnd">Ne pas déranger</option>
             <option value="invisible">Invisible</option>
           </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="view hidden" data-view="fortnite">
+      <header class="view-head"><h2>Fortnite compétitif</h2><p>Cups à venir, classements finaux et Power Ranking des comptes Epic liés.</p></header>
+      <div class="alert hidden" id="fn-api-alert"><b>API Fortnite non configurée.</b> Ajoute FORTNITE_API_KEY et FORTNITE_ENCRYPTION_KEY dans les variables OnePanel avant d'activer.</div>
+      <div class="split">
+        <div class="card">
+          <h3>Notifications automatiques</h3>
+          <label class="check"><input type="checkbox" data-path="fortnite.enabled"><span>Activer les notifications Fortnite</span></label>
+          <div class="field"><label for="fn-region">Région</label><select id="fn-region" data-path="fortnite.region"><option value="EU">Europe</option><option value="NAC">Amérique du Nord Centrale</option><option value="NAW">Amérique du Nord Ouest</option><option value="OCE">Océanie</option><option value="BR">Brésil</option><option value="ASIA">Asie</option><option value="ME">Moyen-Orient</option></select></div>
+          <div class="field"><label for="fn-upcoming">Cups à venir</label><select id="fn-upcoming" data-path="fortnite.upcomingChannelId"></select></div>
+          <div class="field"><label for="fn-results">Classements terminés</label><select id="fn-results" data-path="fortnite.resultsChannelId"></select></div>
+          <div class="field"><label for="fn-player">Classements personnels</label><select id="fn-player" data-path="fortnite.playerChannelId"></select></div>
+          <div class="field"><label for="fn-role">Rôle à notifier</label><select id="fn-role" data-path="fortnite.mentionRoleId"></select></div>
+          <div class="row"><button class="btn btn-primary" id="fn-create">Créer automatiquement les salons</button><button class="btn btn-ghost" id="fn-test">Synchroniser maintenant</button></div>
+        </div>
+        <div class="card">
+          <h3>Mon compte Epic Games</h3>
+          <p class="card-note">La connexion se fait directement chez Epic Games. FAYZEN ne voit jamais ton mot de passe.</p>
+          <div id="fn-epic-empty"><button class="btn btn-primary" id="fn-connect">Connecter Epic Games</button></div>
+          <div id="fn-epic-linked" class="hidden">
+            <div class="epic-account"><span class="dot live"></span><div><b id="fn-epic-name">—</b><small>Compte Epic connecté</small></div></div>
+            <div class="row"><button class="btn btn-primary" id="fn-ranking">Publier mon classement</button><button class="btn btn-ghost" id="fn-unlink">Déconnecter</button></div>
+          </div>
+          <div id="fn-epic-pending" class="hidden"><p>Autorise FAYZEN sur la page Epic ouverte, puis reviens ici.</p><a class="btn btn-primary" id="fn-epic-open" target="_blank" rel="noopener">Ouvrir Epic Games</a><button class="btn btn-ghost" id="fn-epic-check">J'ai autorisé</button></div>
         </div>
       </div>
     </section>

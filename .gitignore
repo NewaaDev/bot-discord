@@ -1,6 +1,8 @@
 # Secrets et configuration propre à l'hébergement
 .env
 config.json
+fortnite-state.json
+fortnite-accounts.json
 
 # Dépendances installées localement
 node_modules/

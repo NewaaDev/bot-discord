@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node bootstrap.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "node --test --test-isolation=none"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

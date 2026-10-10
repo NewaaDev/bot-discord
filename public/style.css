@@ -346,6 +346,10 @@ input[type=color] {
 }
 .toast.bad { border-left-color: var(--crimson); }
 
+.epic-account { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 10px; }
+.epic-account div { display: flex; flex-direction: column; gap: 3px; }
+.epic-account small { opacity: .65; }
+
 /* ── MOBILE ─────────────────────────────────── */
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }

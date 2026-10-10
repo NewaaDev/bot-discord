@@ -33,6 +33,16 @@ const DEFAULTS = {
     dmOnSanction: true,
     logChannelId: null,
   },
+  fortnite: {
+    enabled: false,
+    region: 'EU',
+    upcomingChannelId: null,
+    resultsChannelId: null,
+    playerChannelId: null,
+    mentionRoleId: null,
+    reminderMinutes: 15,
+    topCount: 10,
+  },
   protection: {
     // userId du membre protégé -> liste des userId qu'il a bloqués dans Fayzen
     blocks: {},

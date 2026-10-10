@@ -136,6 +136,7 @@ async function loadGuild() {
   renderPreview();
   markDirty();
   loadTickets();
+  loadFortniteStatus();
 }
 
 // ─────────────────────────────────────────────
@@ -162,6 +163,10 @@ function fillSelects() {
   options($('#t-log'), guild.textChannels, 'Ne rien enregistrer');
   options($('#m-log'), guild.textChannels, 'Ne rien enregistrer');
   options($('#panel-channel'), guild.textChannels, 'Choisir un salon…');
+  options($('#fn-upcoming'), guild.textChannels, 'Choisir un salon…');
+  options($('#fn-results'), guild.textChannels, 'Choisir un salon…');
+  options($('#fn-player'), guild.textChannels, 'Choisir un salon…');
+  options($('#fn-role'), guild.roles, 'Ne notifier aucun rôle');
 }
 
 // ─────────────────────────────────────────────
@@ -448,6 +453,77 @@ $('#send-panel').addEventListener('click', async () => {
 $('#logout').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' });
   location.reload();
+});
+
+// ─────────────────────────────────────────────
+//  FORTNITE COMPÉTITIF
+// ─────────────────────────────────────────────
+async function loadFortniteStatus() {
+  try {
+    const status = await api(g('/fortnite/status'));
+    $('#fn-api-alert').classList.toggle('hidden', status.apiConfigured);
+    $('#fn-epic-empty').classList.toggle('hidden', Boolean(status.epic));
+    $('#fn-epic-linked').classList.toggle('hidden', !status.epic);
+    if (status.epic) $('#fn-epic-name').textContent = status.epic.displayName;
+  } catch { /* La vue reste utilisable même si le fournisseur est indisponible. */ }
+}
+
+$('#fn-create').addEventListener('click', async (event) => {
+  event.currentTarget.disabled = true;
+  try {
+    const result = await api(g('/fortnite/channels'), { method: 'POST' });
+    config = result.config;
+    draft.fortnite = { ...draft.fortnite, ...result.channels };
+    guild = await api(g());
+    fillSelects(); bindFields(); markDirty();
+    toast('Catégorie et salons Fortnite créés');
+  } catch (err) { toast(err.message, true); }
+  event.currentTarget.disabled = false;
+});
+
+$('#fn-test').addEventListener('click', async (event) => {
+  event.currentTarget.disabled = true;
+  try { await api(g('/fortnite/test'), { method: 'POST' }); toast('Synchronisation Fortnite terminée'); }
+  catch (err) { toast(err.message, true); }
+  event.currentTarget.disabled = false;
+});
+
+$('#fn-connect').addEventListener('click', async () => {
+  try {
+    const flow = await api(g('/fortnite/epic/start'), { method: 'POST' });
+    if (!flow.url) throw new Error("L'API n'a pas fourni de page Epic.");
+    $('#fn-epic-open').href = flow.url;
+    $('#fn-epic-empty').classList.add('hidden');
+    $('#fn-epic-pending').classList.remove('hidden');
+    window.open(flow.url, '_blank', 'noopener');
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#fn-epic-check').addEventListener('click', async (event) => {
+  event.currentTarget.disabled = true;
+  try {
+    const response = await fetch(g('/fortnite/epic/complete'), { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 202) return toast('Epic attend encore ton autorisation.', true);
+    if (!response.ok) throw new Error(body.erreur || `Erreur ${response.status}`);
+    $('#fn-epic-pending').classList.add('hidden');
+    await loadFortniteStatus();
+    toast(`Compte Epic ${body.epic.displayName} connecté`);
+  } catch (err) { toast(err.message, true); }
+  finally { event.currentTarget.disabled = false; }
+});
+
+$('#fn-ranking').addEventListener('click', async (event) => {
+  event.currentTarget.disabled = true;
+  try { const result = await api(g('/fortnite/ranking'), { method: 'POST' }); toast(result.rank ? `Classement publié : Top ${result.rank}` : 'Compte non classé, information publiée'); }
+  catch (err) { toast(err.message, true); }
+  event.currentTarget.disabled = false;
+});
+
+$('#fn-unlink').addEventListener('click', async () => {
+  if (!confirm('Déconnecter ce compte Epic de FAYZEN ?')) return;
+  try { await api(g('/fortnite/epic'), { method: 'DELETE' }); await loadFortniteStatus(); toast('Compte Epic déconnecté'); }
+  catch (err) { toast(err.message, true); }
 });
 
 // ─────────────────────────────────────────────
