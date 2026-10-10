@@ -95,6 +95,10 @@ module.exports = {
   DEFAULTS,
   GLOBAL_DEFAULTS,
 
+  guildIds() {
+    return Object.keys(cache).filter(id => id !== GLOBAL_KEY);
+  },
+
   get(guildId) {
     return merge(DEFAULTS, cache[guildId] || {});
   },
