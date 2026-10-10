@@ -332,7 +332,7 @@ app.post('/api/g/:guildId/panel/send', requireGuild, async (req, res) => {
 // ─────────────────────────────────────────────
 app.get('/api/g/:guildId/fortnite/status', requireGuild, (req, res) => {
   const account = fortnite.getEpicAccount(req.params.guildId, req.session.user.id);
-  res.json({ apiConfigured: fortnite.apiConfigured(), epic: account ? { displayName: account.displayName, accountId: account.accountId, linkedAt: account.linkedAt } : null });
+  res.json({ mode: 'free', epic: account });
 });
 
 app.post('/api/g/:guildId/fortnite/channels', requireGuild, async (req, res) => {
@@ -355,39 +355,41 @@ app.post('/api/g/:guildId/fortnite/channels', requireGuild, async (req, res) => 
 });
 
 app.post('/api/g/:guildId/fortnite/test', requireGuild, async (req, res) => {
-  if (!fortnite.apiConfigured()) return res.status(503).json({ erreur: 'FORTNITE_API_KEY manque sur OnePanel.' });
   try { await fortnite.poll(client); res.json({ ok: true }); }
   catch (err) { res.status(500).json({ erreur: err.message }); }
 });
 
-app.post('/api/g/:guildId/fortnite/epic/start', requireGuild, async (req, res) => {
+app.put('/api/g/:guildId/fortnite/epic', requireGuild, async (req, res) => {
   try {
-    const flow = await fortnite.beginEpicLink();
-    req.session.epicFlow = { guildId: req.params.guildId, flowId: flow.flowId || flow.id };
-    res.json({ flowId: flow.flowId || flow.id, url: flow.verificationUriComplete || flow.verification_uri_complete || flow.url, code: flow.userCode || flow.user_code, expiresIn: flow.expiresIn || flow.expires_in });
-  } catch (err) { res.status(err.status || 500).json({ erreur: err.message }); }
-});
-
-app.post('/api/g/:guildId/fortnite/epic/complete', requireGuild, async (req, res) => {
-  const flow = req.session.epicFlow;
-  if (!flow || flow.guildId !== req.params.guildId) return res.status(400).json({ erreur: 'Liaison Epic expirée, recommence.' });
-  try {
-    const result = await fortnite.completeEpicLink(flow.flowId);
-    const epic = fortnite.saveEpicAccount(req.params.guildId, req.session.user.id, result);
-    delete req.session.epicFlow;
-    const ranking = await fortnite.publishPlayerRanking(req.guild, req.session.user.id).catch(() => null);
-    res.json({ ok: true, epic, ranking });
-  } catch (err) {
-    const pending = err.status === 202 || err.status === 429 || /pending|authorization/i.test(err.message);
-    res.status(pending ? 202 : (err.status || 500)).json({ pending, erreur: pending ? 'Autorisation Epic en attente.' : err.message });
-  }
+    const epic = fortnite.saveEpicAccount(req.params.guildId, req.session.user.id, req.body.username);
+    res.json({ ok: true, epic });
+  } catch (err) { res.status(400).json({ erreur: err.message }); }
 });
 
 app.delete('/api/g/:guildId/fortnite/epic', requireGuild, (req, res) => res.json({ ok: fortnite.unlinkEpic(req.params.guildId, req.session.user.id) }));
 
 app.post('/api/g/:guildId/fortnite/ranking', requireGuild, async (req, res) => {
-  try { res.json(await fortnite.publishPlayerRanking(req.guild, req.session.user.id)); }
+  try { res.json(await fortnite.publishPlayerLinks(req.guild, req.session.user.id)); }
   catch (err) { res.status(err.status || 500).json({ erreur: err.message }); }
+});
+
+app.get('/api/g/:guildId/fortnite/events', requireGuild, (req, res) => res.json(fortnite.listEvents(req.params.guildId)));
+
+app.post('/api/g/:guildId/fortnite/events', requireGuild, async (req, res) => {
+  let event;
+  try {
+    event = fortnite.addEvent(req.params.guildId, req.body);
+    await fortnite.announceEvent(req.guild, event);
+    res.json({ ok: true, event });
+  } catch (err) {
+    if (event) fortnite.removeEvent(req.params.guildId, event.id);
+    res.status(400).json({ erreur: err.message });
+  }
+});
+
+app.delete('/api/g/:guildId/fortnite/events/:eventId', requireGuild, (req, res) => {
+  if (!fortnite.removeEvent(req.params.guildId, req.params.eventId)) return res.status(404).json({ erreur: 'Cup introuvable.' });
+  res.json({ ok: true });
 });
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
