@@ -43,7 +43,7 @@ async function main() {
   if (response.ok) html = await response.text();
   else {
     const chrome = process.env.CHROME_PATH || 'google-chrome';
-    html = execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--dump-dom', 'https://www.fortnite.com/competitive/schedule?lang=en-US&region=EU'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
+    html = execFileSync(chrome, ['--headless', '--no-sandbox', '--disable-gpu', '--virtual-time-budget=15000', '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36', '--dump-dom', 'https://www.fortnite.com/competitive/schedule?lang=en-US&region=EU'], { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 });
   }
   const events = parseSchedule(html);
   if (!events.length) throw new Error('Aucune cup future trouvée; conservation du cache existant.');
