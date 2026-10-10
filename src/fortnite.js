@@ -329,6 +329,7 @@ async function poll(client) {
   if (running) return; running = true; const state = readJson(STATE_FILE, {});
   try {
     const guilds = [...client.guilds.cache.values()];
+    if (guilds.length === 0) return;
     if (Date.now() - lastSyncAt >= SYNC_MS) {
       lastSyncAt = Date.now();
       await syncAutomaticEvents(state, guilds).catch(err => console.error(`[Fortnite] Synchronisation automatique : ${err.message}`));
@@ -340,7 +341,7 @@ async function poll(client) {
 }
 function start(client) {
   if (timer) return;
-  setTimeout(() => poll(client), 5_000).unref?.();
+  setTimeout(() => poll(client), 30_000).unref?.();
   timer = setInterval(() => poll(client), POLL_MS);
   timer.unref?.();
   console.log('✅ Cups Fortnite automatiques actives (mode gratuit)');
