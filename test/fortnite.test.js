@@ -35,3 +35,8 @@ test('tous les éléments Fortnite utilisés par le dashboard existent', () => {
   const missing = [...new Set(ids)].filter(id => !html.includes(`id="${id}"`));
   assert.deepEqual(missing, []);
 });
+
+test('le dashboard utilise le port alloué par OnePanel', () => {
+  const entrypoint = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+  assert.match(entrypoint, /process\.env\.PORT \|\| process\.env\.SERVER_PORT \|\| 3000/);
+});

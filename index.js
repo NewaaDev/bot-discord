@@ -11,7 +11,9 @@ if (manquants.length) {
 const { client } = require('./src/bot');
 const app = require('./src/web');
 
-const PORT = process.env.PORT || 3000;
+// OnePanel/Pterodactyl expose le port alloué via SERVER_PORT. PORT reste
+// prioritaire pour les hébergements qui le définissent explicitement.
+const PORT = process.env.PORT || process.env.SERVER_PORT || 3000;
 
 client.login(process.env.TOKEN)
   .then(() => {
