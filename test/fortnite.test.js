@@ -40,3 +40,15 @@ test('le dashboard utilise le port alloué par OnePanel', () => {
   const entrypoint = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
   assert.match(entrypoint, /process\.env\.PORT \|\| process\.env\.SERVER_PORT \|\| 2810/);
 });
+
+test('importe automatiquement les prochaines sessions Fortnite de la région choisie', () => {
+  const payload = { events: [{ eventId: 'epicgames_S42_SoloVictoryCup_EU', metadata: { webId: 'S42_SoloVictoryCup' }, eventWindows: [
+    { eventWindowId: 'S42_SoloVictoryCup_Event1_EU', beginTime: '2099-10-12T17:00:00Z', endTime: '2099-10-12T20:00:00Z', visibility: 'public', round: 1 },
+  ] }] };
+  const html = `<script>const ssrEventsData = ${JSON.stringify(payload)}; const autre = {"ok":true};</script>`;
+  const events = fortnite.__test.parseAutomaticEvents(html, 'EU', Date.parse('2099-10-01T00:00:00Z'));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].id, 'auto-S42_SoloVictoryCup_Event1_EU');
+  assert.equal(events[0].name, 'Solo Victory Cup');
+  assert.match(events[0].link, /fortnitetracker\.com\/events/);
+});

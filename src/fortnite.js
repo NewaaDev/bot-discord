@@ -6,8 +6,12 @@ const store = require('./store');
 const STATE_FILE = process.env.FORTNITE_STATE_FILE || path.join(__dirname, '..', 'fortnite-state.json');
 const ACCOUNTS_FILE = process.env.FORTNITE_ACCOUNTS_FILE || path.join(__dirname, '..', 'fortnite-accounts.json');
 const POLL_MS = Math.max(60_000, Number(process.env.FORTNITE_POLL_MS) || 60_000);
+const SYNC_MS = Math.max(5 * 60_000, Number(process.env.FORTNITE_SYNC_MS) || 15 * 60_000);
+const EVENTS_SOURCE = process.env.FORTNITE_EVENTS_SOURCE || 'https://myfortnitestats.com/events';
+const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
 let timer = null;
 let running = false;
+let lastSyncAt = 0;
 
 function readJson(file, fallback = {}) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
 function writeJson(file, value) { const tmp = `${file}.tmp`; fs.writeFileSync(tmp, JSON.stringify(value, null, 2)); fs.renameSync(tmp, file); }
@@ -58,6 +62,76 @@ function normalizeEvent(body, guildId) {
   return { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, beginTime: beginTime.toISOString(), endTime: endTime.toISOString(), region: body.region || cfg.region || 'EU', mode: String(body.mode || '').trim().slice(0, 80), link, createdAt: new Date().toISOString() };
 }
 
+function extractAssignedJson(html, variableName) {
+  const marker = `const ${variableName} =`;
+  const markerAt = html.indexOf(marker);
+  if (markerAt < 0) throw new Error(`Données ${variableName} introuvables.`);
+  const start = html.indexOf('{', markerAt + marker.length);
+  if (start < 0) throw new Error(`Données ${variableName} invalides.`);
+  let depth = 0; let inString = false; let escaped = false;
+  for (let i = start; i < html.length; i += 1) {
+    const char = html[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === '{') depth += 1;
+    else if (char === '}' && --depth === 0) return JSON.parse(html.slice(start, i + 1));
+  }
+  throw new Error(`Données ${variableName} incomplètes.`);
+}
+
+function eventName(event) {
+  const raw = String(event.metadata?.webId || event.eventId || 'Cup Fortnite')
+    .replace(/^epicgames_/i, '').replace(/_[A-Z]{2,4}$/i, '')
+    .replace(/^S\d+_?/i, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim();
+  return raw.replace(/\bFncs\b/gi, 'FNCS').replace(/\bZb\b/gi, 'Zero Build').slice(0, 100) || 'Cup Fortnite';
+}
+
+function parseAutomaticEvents(html, region = 'EU', now = Date.now()) {
+  const data = extractAssignedJson(html, 'ssrEventsData');
+  const events = [];
+  for (const source of data.events || []) {
+    if (!String(source.eventId || '').endsWith(`_${region}`)) continue;
+    for (const window of source.eventWindows || []) {
+      if (window.visibility && window.visibility !== 'public') continue;
+      const begin = new Date(window.beginTime); const end = new Date(window.endTime);
+      if (!Number.isFinite(begin.getTime()) || !Number.isFinite(end.getTime()) || end.getTime() <= now) continue;
+      events.push({
+        id: `auto-${window.eventWindowId}`,
+        sourceId: window.eventWindowId,
+        name: eventName(source),
+        beginTime: begin.toISOString(), endTime: end.toISOString(), region,
+        mode: window.metadata?.RoundType ? `Session ${window.round || ''} • ${window.metadata.RoundType}`.trim() : `Session ${window.round || 1}`,
+        link: `https://fortnitetracker.com/events/${encodeURIComponent(source.eventId)}`,
+        createdAt: new Date().toISOString(), automatic: true,
+      });
+    }
+  }
+  return events.sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
+}
+
+async function syncAutomaticEvents(state, guilds) {
+  const response = await fetch(EVENTS_SOURCE, { headers: { 'user-agent': 'FAYZEN Discord Bot/1.0 (+Fortnite cup notifications)', accept: 'text/html' }, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`calendrier HTTP ${response.status}`);
+  const html = await response.text();
+  let added = 0;
+  for (const guild of guilds) {
+    const cfg = store.get(guild.id).fortnite;
+    if (!cfg.enabled) continue;
+    state[guild.id] ||= { events: [] };
+    const known = new Set(state[guild.id].events.map(event => event.sourceId || event.id));
+    for (const event of parseAutomaticEvents(html, cfg.region || 'EU')) {
+      if (!known.has(event.sourceId)) { state[guild.id].events.push(event); known.add(event.sourceId); added += 1; }
+    }
+  }
+  console.log(`✅ Calendrier Fortnite synchronisé automatiquement (${added} nouvelle(s) session(s))`);
+  return added;
+}
+
 async function send(channel, payload) {
   if (!channel?.isTextBased()) return false;
   const permissions = channel.permissionsFor(channel.guild.members.me);
@@ -93,6 +167,11 @@ async function pollGuild(guild, state) {
   const cfg = store.get(guild.id).fortnite; if (!cfg.enabled) return;
   const events = state[guild.id]?.events || []; const now = Date.now();
   for (const event of events) {
+    const beginAt = new Date(event.beginTime).getTime();
+    if (event.automatic && !event.announcedAt && now >= beginAt - ANNOUNCE_AHEAD_MS && now < beginAt) {
+      try { await announceEvent(guild, event); event.announcedAt = new Date().toISOString(); }
+      catch (error) { console.error(`[Fortnite] Annonce ${event.name} : ${error.message}`); }
+    }
     const reminderAt = new Date(event.beginTime).getTime() - (cfg.reminderMinutes || 15) * 60_000;
     if (!event.remindedAt && now >= reminderAt && now < new Date(event.beginTime).getTime()) {
       const channel = guild.channels.cache.get(cfg.upcomingChannelId); const mention = cfg.mentionRoleId ? `<@&${cfg.mentionRoleId}>` : undefined;
@@ -110,10 +189,18 @@ async function pollGuild(guild, state) {
 
 async function poll(client) {
   if (running) return; running = true; const state = readJson(STATE_FILE, {});
-  try { for (const guild of client.guilds.cache.values()) await pollGuild(guild, state).catch(err => console.error(`[Fortnite] ${guild.name} : ${err.message}`)); writeJson(STATE_FILE, state); }
+  try {
+    const guilds = [...client.guilds.cache.values()];
+    if (Date.now() - lastSyncAt >= SYNC_MS) {
+      lastSyncAt = Date.now();
+      await syncAutomaticEvents(state, guilds).catch(err => console.error(`[Fortnite] Synchronisation automatique : ${err.message}`));
+    }
+    for (const guild of guilds) await pollGuild(guild, state).catch(err => console.error(`[Fortnite] ${guild.name} : ${err.message}`));
+    writeJson(STATE_FILE, state);
+  }
   finally { running = false; }
 }
-function start(client) { if (timer) return; poll(client); timer = setInterval(() => poll(client), POLL_MS); timer.unref?.(); console.log('✅ Rappels Fortnite Tracker actifs (mode gratuit)'); }
+function start(client) { if (timer) return; poll(client); timer = setInterval(() => poll(client), POLL_MS); timer.unref?.(); console.log('✅ Cups Fortnite automatiques actives (mode gratuit)'); }
 
 async function publishPlayerLinks(guild, discordId) {
   const account = getEpicAccount(guild.id, discordId); if (!account) throw new Error('Enregistre d’abord ton pseudo Epic.');
@@ -129,4 +216,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, eventName } };
