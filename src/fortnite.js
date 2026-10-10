@@ -8,6 +8,7 @@ const ACCOUNTS_FILE = process.env.FORTNITE_ACCOUNTS_FILE || path.join(__dirname,
 const POLL_MS = Math.max(60_000, Number(process.env.FORTNITE_POLL_MS) || 60_000);
 const SYNC_MS = Math.max(5 * 60_000, Number(process.env.FORTNITE_SYNC_MS) || 15 * 60_000);
 const EVENTS_SOURCE = process.env.FORTNITE_EVENTS_SOURCE || 'https://myfortnitestats.com/events';
+const OFFICIAL_SCHEDULE_SOURCE = 'https://www.fortnite.com/competitive/schedule?lang=en-US';
 const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
 let timer = null;
 let running = false;
@@ -114,6 +115,46 @@ function parseAutomaticEvents(html, region = 'EU', now = Date.now()) {
   return events.sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
 }
 
+function decodeHtml(value) {
+  return String(value || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&ndash;|&#8211;/g, '–');
+}
+
+function parisTimeToIso(day, time) {
+  const match = String(time).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let hour = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === 'PM') hour += 12;
+  const [year, month, date] = day.split('-').map(Number);
+  const wanted = Date.UTC(year, month - 1, date, hour, Number(match[2]));
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const parts = Object.fromEntries(formatter.formatToParts(new Date(wanted)).filter(p => p.type !== 'literal').map(p => [p.type, Number(p.value)]));
+  const shown = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
+  return new Date(wanted + (wanted - shown)).toISOString();
+}
+
+function parseOfficialSchedule(html, region = 'EU', now = Date.now()) {
+  const headings = [...html.matchAll(/<h2\b[^>]*id=["']schedule-label-(\d{4}-\d{2}-\d{2})T[^"']+["'][^>]*>/gi)];
+  const events = []; const seen = new Set();
+  for (let i = 0; i < headings.length; i += 1) {
+    const day = headings[i][1];
+    const section = html.slice(headings[i].index, headings[i + 1]?.index || html.length);
+    const links = section.matchAll(/<a\b[^>]*aria-label=["']([^"']+)["'][^>]*href=["']([^"']*\/competitive\/events\/([^?"']+)\?round=([^&"']+)[^"']*)["'][^>]*>/gi);
+    for (const link of links) {
+      const label = decodeHtml(link[1]); const split = label.match(/^(\d{1,2}:\d{2}\s*(?:AM|PM))\s+-\s+(.+?)\s+–\s+(.+)$/i);
+      if (!split) continue;
+      const sourceId = decodeURIComponent(link[4]);
+      if (seen.has(sourceId) || !sourceId.toUpperCase().endsWith(`_${region.toUpperCase()}`)) continue;
+      const beginTime = parisTimeToIso(day, split[1]);
+      if (!beginTime) continue;
+      const begin = new Date(beginTime); const end = new Date(begin.getTime() + 3 * 60 * 60_000);
+      if (end.getTime() <= now) continue;
+      seen.add(sourceId);
+      events.push({ id: `auto-${sourceId}`, sourceId, name: split[2].slice(0, 100), beginTime, endTime: end.toISOString(), region, mode: split[3].slice(0, 80), link: `https://fortnitetracker.com/events/epicgames_${encodeURIComponent(link[3])}_${region}`, createdAt: new Date().toISOString(), automatic: true });
+    }
+  }
+  return events.sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
+}
+
 async function syncAutomaticEvents(state, guilds) {
   const sourceUrl = new URL(EVENTS_SOURCE);
   sourceUrl.searchParams.set('_fayzen', String(Date.now()));
@@ -125,13 +166,21 @@ async function syncAutomaticEvents(state, guilds) {
   }, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`calendrier HTTP ${response.status}`);
   const html = await response.text();
+  const regions = [...new Set(guilds.map(guild => store.get(guild.id).fortnite).filter(cfg => cfg.enabled).map(cfg => cfg.region || 'EU'))];
+  const byRegion = new Map(regions.map(region => [region, parseAutomaticEvents(html, region)]));
+  if ([...byRegion.values()].every(events => events.length === 0)) {
+    for (const region of regions) {
+      const official = await fetch(`${OFFICIAL_SCHEDULE_SOURCE}&region=${encodeURIComponent(region)}`, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; FAYZEN/2.0)', accept: 'text/html' }, signal: AbortSignal.timeout(30_000) });
+      if (official.ok) byRegion.set(region, parseOfficialSchedule(await official.text(), region));
+    }
+  }
   let added = 0; let available = 0;
   for (const guild of guilds) {
     const cfg = store.get(guild.id).fortnite;
     if (!cfg.enabled) continue;
     state[guild.id] ||= { events: [] };
     const known = new Set(state[guild.id].events.map(event => event.sourceId || event.id));
-    const automaticEvents = parseAutomaticEvents(html, cfg.region || 'EU');
+    const automaticEvents = byRegion.get(cfg.region || 'EU') || [];
     available += automaticEvents.length;
     for (const event of automaticEvents) {
       if (!known.has(event.sourceId)) { state[guild.id].events.push(event); known.add(event.sourceId); added += 1; }
@@ -225,4 +274,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, eventName } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, eventName } };

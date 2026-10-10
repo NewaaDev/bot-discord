@@ -52,3 +52,12 @@ test('importe automatiquement les prochaines sessions Fortnite de la région cho
   assert.equal(events[0].name, 'Solo Victory Cup');
   assert.match(events[0].link, /fortnitetracker\.com\/events/);
 });
+
+test('utilise le calendrier officiel Fortnite si la première source est vide', () => {
+  const html = '<h2 id="schedule-label-2099-10-12T00:00:00.000Z">October 12, 2099</h2><ul><li><a aria-label="7:00 PM - Solo Ranked Cup (Battle Royale) – Session 1 - Round 7" href="/competitive/events/S42_RankedCupSolo?round=S42_RankedCupSolo_Event7_EU">Solo Ranked Cup</a></li></ul>';
+  const events = fortnite.__test.parseOfficialSchedule(html, 'EU', Date.parse('2099-10-01T00:00:00Z'));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].sourceId, 'S42_RankedCupSolo_Event7_EU');
+  assert.equal(events[0].beginTime, '2099-10-12T17:00:00.000Z');
+  assert.match(events[0].link, /epicgames_S42_RankedCupSolo_EU/);
+});
