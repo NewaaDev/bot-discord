@@ -132,7 +132,53 @@ function parisTimeToIso(day, time) {
   return new Date(wanted + (wanted - shown)).toISOString();
 }
 
+function extractOfficialScheduleData(html) {
+  const marker = 'streamController.enqueue(';
+  const markerAt = html.indexOf(marker);
+  if (markerAt < 0) return [];
+  const quoteAt = html.indexOf('"', markerAt + marker.length);
+  if (quoteAt < 0) return [];
+  let escaped = false; let end = quoteAt + 1;
+  for (; end < html.length; end += 1) {
+    if (escaped) escaped = false;
+    else if (html[end] === '\\') escaped = true;
+    else if (html[end] === '"') break;
+  }
+  const flat = JSON.parse(JSON.parse(html.slice(quoteAt, end + 1)));
+  const values = new Array(flat.length); const seen = new Array(flat.length);
+  const hydrate = index => {
+    if (index === -5) return undefined;
+    if (index < 0) return null;
+    if (seen[index]) return values[index];
+    const value = flat[index];
+    if (value === null || typeof value !== 'object') return (values[index] = value);
+    seen[index] = true;
+    if (Array.isArray(value)) {
+      const result = (values[index] = []);
+      for (const entry of value) result.push(hydrate(entry));
+      return result;
+    }
+    const result = (values[index] = {});
+    for (const [key, entry] of Object.entries(value)) result[hydrate(Number(key.slice(1)))] = hydrate(entry);
+    return result;
+  };
+  return hydrate(0)?.loaderData?.['routes/competitive.schedule']?.scheduleDays || [];
+}
+
 function parseOfficialSchedule(html, region = 'EU', now = Date.now()) {
+  const officialDays = extractOfficialScheduleData(html);
+  if (officialDays.length) {
+    const events = []; const seen = new Set();
+    for (const day of officialDays) for (const source of day.events || []) {
+      const window = source.eventWindow || {};
+      if (!String(source.eventId || '').toUpperCase().endsWith(`_${region.toUpperCase()}`) || window.visibility !== 'public' || seen.has(window.eventWindowId)) continue;
+      const end = new Date(window.endTime);
+      if (!Number.isFinite(end.getTime()) || end.getTime() <= now) continue;
+      seen.add(window.eventWindowId);
+      events.push({ id: `auto-${window.eventWindowId}`, sourceId: window.eventWindowId, name: String(source.tournamentName || eventName(source)).slice(0, 100), beginTime: new Date(window.beginTime).toISOString(), endTime: end.toISOString(), region, mode: String(source.roundName || `Session ${window.round || 1}`).slice(0, 80), link: `https://fortnitetracker.com/events/${encodeURIComponent(source.eventId)}`, createdAt: new Date().toISOString(), automatic: true });
+    }
+    return events.sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
+  }
   const headings = [...html.matchAll(/<h2\b[^>]*id=["']schedule-label-(\d{4}-\d{2}-\d{2})T[^"']+["'][^>]*>/gi)];
   const events = []; const seen = new Set();
   for (let i = 0; i < headings.length; i += 1) {
