@@ -338,7 +338,13 @@ async function poll(client) {
   }
   finally { running = false; }
 }
-function start(client) { if (timer) return; poll(client); timer = setInterval(() => poll(client), POLL_MS); timer.unref?.(); console.log('✅ Cups Fortnite automatiques actives (mode gratuit)'); }
+function start(client) {
+  if (timer) return;
+  setTimeout(() => poll(client), 5_000).unref?.();
+  timer = setInterval(() => poll(client), POLL_MS);
+  timer.unref?.();
+  console.log('✅ Cups Fortnite automatiques actives (mode gratuit)');
+}
 
 async function publishPlayerLinks(guild, discordId) {
   const account = getEpicAccount(guild.id, discordId); if (!account) throw new Error('Enregistre d’abord ton pseudo Epic.');
