@@ -9,6 +9,7 @@ const POLL_MS = Math.max(60_000, Number(process.env.FORTNITE_POLL_MS) || 60_000)
 const SYNC_MS = Math.max(5 * 60_000, Number(process.env.FORTNITE_SYNC_MS) || 15 * 60_000);
 const EVENTS_SOURCE = process.env.FORTNITE_EVENTS_SOURCE || 'https://myfortnitestats.com/events';
 const OFFICIAL_SCHEDULE_SOURCE = 'https://www.fortnite.com/competitive/schedule?lang=en-US';
+const EVENTS_CACHE_SOURCE = process.env.FORTNITE_EVENTS_CACHE_SOURCE || 'https://raw.githubusercontent.com/NewaaDev/bot-discord/main/public/fortnite-events.json';
 const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
 let timer = null;
 let running = false;
@@ -201,6 +202,13 @@ function parseOfficialSchedule(html, region = 'EU', now = Date.now()) {
   return events.sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
 }
 
+function parseCachedEvents(payload, region = 'EU', now = Date.now()) {
+  return (Array.isArray(payload) ? payload : []).filter(event => event.region === region && new Date(event.endTime).getTime() > now).map(event => ({
+    id: `auto-${event.eventWindowId}`, sourceId: event.eventWindowId, name: event.name, beginTime: event.beginTime, endTime: event.endTime, region,
+    mode: event.mode, link: `https://fortnitetracker.com/events/${encodeURIComponent(event.eventId)}`, createdAt: new Date().toISOString(), automatic: true,
+  })).sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
+}
+
 async function syncAutomaticEvents(state, guilds) {
   const sourceUrl = new URL(EVENTS_SOURCE);
   sourceUrl.searchParams.set('_fayzen', String(Date.now()));
@@ -214,6 +222,13 @@ async function syncAutomaticEvents(state, guilds) {
   const html = await response.text();
   const regions = [...new Set(guilds.map(guild => store.get(guild.id).fortnite).filter(cfg => cfg.enabled).map(cfg => cfg.region || 'EU'))];
   const byRegion = new Map(regions.map(region => [region, parseAutomaticEvents(html, region)]));
+  if ([...byRegion.values()].every(events => events.length === 0)) {
+    const cached = await fetch(`${EVENTS_CACHE_SOURCE}?t=${Date.now()}`, { headers: { accept: 'application/json', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
+    if (cached.ok) {
+      const payload = await cached.json();
+      for (const region of regions) byRegion.set(region, parseCachedEvents(payload, region));
+    }
+  }
   if ([...byRegion.values()].every(events => events.length === 0)) {
     for (const region of regions) {
       const official = await fetch(`${OFFICIAL_SCHEDULE_SOURCE}&region=${encodeURIComponent(region)}`, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; FAYZEN/2.0)', accept: 'text/html' }, signal: AbortSignal.timeout(30_000) });
@@ -320,4 +335,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, eventName } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName } };
