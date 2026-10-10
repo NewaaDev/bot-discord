@@ -115,20 +115,29 @@ function parseAutomaticEvents(html, region = 'EU', now = Date.now()) {
 }
 
 async function syncAutomaticEvents(state, guilds) {
-  const response = await fetch(EVENTS_SOURCE, { headers: { 'user-agent': 'FAYZEN Discord Bot/1.0 (+Fortnite cup notifications)', accept: 'text/html' }, signal: AbortSignal.timeout(30_000) });
+  const sourceUrl = new URL(EVENTS_SOURCE);
+  sourceUrl.searchParams.set('_fayzen', String(Date.now()));
+  const response = await fetch(sourceUrl, { headers: {
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+    accept: 'text/html,application/xhtml+xml',
+    'accept-language': 'fr-FR,fr;q=0.9,en;q=0.8',
+    'cache-control': 'no-cache',
+  }, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`calendrier HTTP ${response.status}`);
   const html = await response.text();
-  let added = 0;
+  let added = 0; let available = 0;
   for (const guild of guilds) {
     const cfg = store.get(guild.id).fortnite;
     if (!cfg.enabled) continue;
     state[guild.id] ||= { events: [] };
     const known = new Set(state[guild.id].events.map(event => event.sourceId || event.id));
-    for (const event of parseAutomaticEvents(html, cfg.region || 'EU')) {
+    const automaticEvents = parseAutomaticEvents(html, cfg.region || 'EU');
+    available += automaticEvents.length;
+    for (const event of automaticEvents) {
       if (!known.has(event.sourceId)) { state[guild.id].events.push(event); known.add(event.sourceId); added += 1; }
     }
   }
-  console.log(`✅ Calendrier Fortnite synchronisé automatiquement (${added} nouvelle(s) session(s))`);
+  console.log(`✅ Calendrier Fortnite synchronisé automatiquement (${added} nouvelle(s), ${available} disponible(s))`);
   return added;
 }
 
