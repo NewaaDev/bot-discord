@@ -9,7 +9,7 @@ const POLL_MS = Math.max(60_000, Number(process.env.FORTNITE_POLL_MS) || 60_000)
 const SYNC_MS = Math.max(5 * 60_000, Number(process.env.FORTNITE_SYNC_MS) || 15 * 60_000);
 const EVENTS_SOURCE = process.env.FORTNITE_EVENTS_SOURCE || 'https://myfortnitestats.com/events';
 const OFFICIAL_SCHEDULE_SOURCE = 'https://www.fortnite.com/competitive/schedule?lang=en-US';
-const EVENTS_CACHE_SOURCE = process.env.FORTNITE_EVENTS_CACHE_SOURCE || 'https://raw.githubusercontent.com/NewaaDev/bot-discord/main/public/fortnite-events.json';
+const EVENTS_CACHE_SOURCE = process.env.FORTNITE_EVENTS_CACHE_SOURCE || 'https://api.github.com/repos/NewaaDev/bot-discord/contents/public/fortnite-events.json?ref=main';
 const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
 let timer = null;
 let running = false;
@@ -223,7 +223,8 @@ async function syncAutomaticEvents(state, guilds) {
   const regions = [...new Set(guilds.map(guild => store.get(guild.id).fortnite).filter(cfg => cfg.enabled).map(cfg => cfg.region || 'EU'))];
   const byRegion = new Map(regions.map(region => [region, parseAutomaticEvents(html, region)]));
   if ([...byRegion.values()].every(events => events.length === 0)) {
-    const cached = await fetch(`${EVENTS_CACHE_SOURCE}?t=${Date.now()}`, { headers: { accept: 'application/json', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
+    const cachedUrl = new URL(EVENTS_CACHE_SOURCE); cachedUrl.searchParams.set('_fayzen', String(Date.now()));
+    const cached = await fetch(cachedUrl, { headers: { accept: 'application/vnd.github.raw+json', 'user-agent': 'FAYZEN Discord Bot', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
     if (cached.ok) {
       const payload = await cached.json();
       for (const region of regions) byRegion.set(region, parseCachedEvents(payload, region));
