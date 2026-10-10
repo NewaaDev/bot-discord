@@ -328,7 +328,11 @@ async function pollGuild(guild, state) {
 async function poll(client) {
   if (running) return; running = true; const state = readJson(STATE_FILE, {});
   try {
-    const guilds = [...client.guilds.cache.values()];
+    let guilds = [...client.guilds.cache.values()];
+    if (guilds.length === 0) {
+      const summaries = await client.guilds.fetch();
+      guilds = (await Promise.all([...summaries.keys()].map(id => client.guilds.fetch(id).catch(() => null)))).filter(Boolean);
+    }
     if (guilds.length === 0) return;
     if (Date.now() - lastSyncAt >= SYNC_MS) {
       lastSyncAt = Date.now();
