@@ -204,8 +204,9 @@ function parseOfficialSchedule(html, region = 'EU', now = Date.now()) {
 }
 
 function parseCachedEvents(payload, region = 'EU', now = Date.now()) {
-  return (Array.isArray(payload) ? payload : []).filter(event => event.region === region && new Date(event.endTime).getTime() > now).map(event => ({
-    id: `auto-${event.eventWindowId}`, sourceId: event.eventWindowId, name: event.name, beginTime: event.beginTime, endTime: event.endTime, region,
+  const normalizedRegion = String(region || 'EU').toUpperCase();
+  return (Array.isArray(payload) ? payload : []).filter(event => String(event.region || 'EU').toUpperCase() === normalizedRegion && new Date(event.endTime).getTime() > now).map(event => ({
+    id: `auto-${event.eventWindowId}`, sourceId: event.eventWindowId, name: event.name, beginTime: event.beginTime, endTime: event.endTime, region: normalizedRegion,
     mode: event.mode, link: `https://fortnitetracker.com/events/${encodeURIComponent(event.eventId)}`, createdAt: new Date().toISOString(), automatic: true,
   })).sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
 }
@@ -239,7 +240,9 @@ async function syncAutomaticEvents(state, guilds) {
     } catch (error) { console.warn(`[Fortnite] Cache distant indisponible : ${error.message}`); }
   }
   if ([...byRegion.values()].every(events => events.length === 0)) {
-    const parsed = cachedEventsForRegions(readJson(LOCAL_EVENTS_CACHE, []), regions);
+    const localPayload = readJson(LOCAL_EVENTS_CACHE, []);
+    const parsed = cachedEventsForRegions(localPayload, regions);
+    console.log(`[Fortnite] Cache local: ${Array.isArray(localPayload) ? localPayload.length : 0} entrée(s), régions ${regions.join(', ')}, heure ${new Date().toISOString()}.`);
     if (parsed) {
       for (const [region, events] of parsed) byRegion.set(region, events);
       console.log('[Fortnite] Calendrier de secours local chargé.');
