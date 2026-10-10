@@ -10,6 +10,7 @@ const SYNC_MS = Math.max(5 * 60_000, Number(process.env.FORTNITE_SYNC_MS) || 15 
 const EVENTS_SOURCE = process.env.FORTNITE_EVENTS_SOURCE || 'https://myfortnitestats.com/events';
 const OFFICIAL_SCHEDULE_SOURCE = 'https://www.fortnite.com/competitive/schedule?lang=en-US';
 const EVENTS_CACHE_SOURCE = process.env.FORTNITE_EVENTS_CACHE_SOURCE || 'https://api.github.com/repos/NewaaDev/bot-discord/contents/public/fortnite-events.json?ref=main';
+const LOCAL_EVENTS_CACHE = path.join(__dirname, '..', 'public', 'fortnite-events.json');
 const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
 let timer = null;
 let running = false;
@@ -209,6 +210,11 @@ function parseCachedEvents(payload, region = 'EU', now = Date.now()) {
   })).sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
 }
 
+function cachedEventsForRegions(payload, regions) {
+  const parsed = new Map(regions.map(region => [region, parseCachedEvents(payload, region)]));
+  return [...parsed.values()].some(events => events.length) ? parsed : null;
+}
+
 async function syncAutomaticEvents(state, guilds) {
   const sourceUrl = new URL(EVENTS_SOURCE);
   sourceUrl.searchParams.set('_fayzen', String(Date.now()));
@@ -223,11 +229,20 @@ async function syncAutomaticEvents(state, guilds) {
   const regions = [...new Set(guilds.map(guild => store.get(guild.id).fortnite).filter(cfg => cfg.enabled).map(cfg => cfg.region || 'EU'))];
   const byRegion = new Map(regions.map(region => [region, parseAutomaticEvents(html, region)]));
   if ([...byRegion.values()].every(events => events.length === 0)) {
-    const cachedUrl = new URL(EVENTS_CACHE_SOURCE); cachedUrl.searchParams.set('_fayzen', String(Date.now()));
-    const cached = await fetch(cachedUrl, { headers: { accept: 'application/vnd.github.raw+json', 'user-agent': 'FAYZEN Discord Bot', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
-    if (cached.ok) {
-      const payload = await cached.json();
-      for (const region of regions) byRegion.set(region, parseCachedEvents(payload, region));
+    try {
+      const cachedUrl = new URL(EVENTS_CACHE_SOURCE); cachedUrl.searchParams.set('_fayzen', String(Date.now()));
+      const cached = await fetch(cachedUrl, { headers: { accept: 'application/vnd.github.raw+json', 'user-agent': 'FAYZEN Discord Bot', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
+      if (cached.ok) {
+        const parsed = cachedEventsForRegions(await cached.json(), regions);
+        if (parsed) for (const [region, events] of parsed) byRegion.set(region, events);
+      } else console.warn(`[Fortnite] Cache distant indisponible (HTTP ${cached.status}).`);
+    } catch (error) { console.warn(`[Fortnite] Cache distant indisponible : ${error.message}`); }
+  }
+  if ([...byRegion.values()].every(events => events.length === 0)) {
+    const parsed = cachedEventsForRegions(readJson(LOCAL_EVENTS_CACHE, []), regions);
+    if (parsed) {
+      for (const [region, events] of parsed) byRegion.set(region, events);
+      console.log('[Fortnite] Calendrier de secours local chargé.');
     }
   }
   if ([...byRegion.values()].every(events => events.length === 0)) {
