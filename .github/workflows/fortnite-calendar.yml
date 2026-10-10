@@ -16,9 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - uses: browser-actions/setup-chrome@v1
-      - run: npm ci
       - run: node scripts/update-fortnite-events.js
       - name: Publier le calendrier si necessaire
         run: |
