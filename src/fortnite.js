@@ -71,6 +71,20 @@ function extractSocialImage(html) {
   return validImageUrl(match?.[1]);
 }
 
+function fallbackEventImage(event) {
+  const key = `${event?.link || ''} ${event?.sourceId || ''} ${event?.name || ''}`;
+  const images = [
+    [/ArenaTestCup|Arenas? Test Cup/i, 'https://trackercdn.com/unreal/en-fnbr-40-10-comp-arenastestcup-discovertile-1920x1080-1920x1080-99955accbc39.jpg'],
+    [/ReloadCashCup|Reload ZB Duos Cash Cup/i, 'https://trackercdn.com/unreal/en-fneco-33-00-competitive-discoverytile-cashcup-1920x1080-1920x1080-30d0287241c3.jpg'],
+    [/ConsoleVCC|Console.*Victory Cup/i, 'https://trackercdn.com/unreal/en-fnce-34-40-competitive-discoverytile-consolevictorycup-1920x1080-1920x1080-d9732741987b.jpg'],
+    [/FNCSSolo|FNCS Solo/i, 'https://trackercdn.com/unreal/en-fnce-42-00-solos-discovertile-1920x1080-1920x1080-456d617381ea.jpg'],
+    [/PerformanceEvaluation|Performance Evaluation/i, 'https://trackercdn.com/unreal/en-fneco-33-00-competitive-discoverytile-performanceevaluation-1080x1920-1920x1080-0d97208eb6f0.jpg'],
+    [/VictoryCup|Victory Cup/i, 'https://trackercdn.com/unreal/en-fnce-38-00-competitive-discoverytile-victorycashcup-1980x1020-1920x1080-286ddbb64684.jpg'],
+    [/RankedCup|Ranked Cup/i, 'https://trackercdn.com/unreal/en-fneco-33-00-competitive-discoverytile-rankedcups-1920x1080-1920x1080-a078f4d982b2.jpg'],
+  ];
+  return images.find(([pattern]) => pattern.test(key))?.[1] || null;
+}
+
 async function resolveEventImage(event) {
   if (validImageUrl(event.imageUrl)) return event.imageUrl;
   if (!validUrl(event.link)) return null;
@@ -79,10 +93,10 @@ async function resolveEventImage(event) {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; FAYZEN/2.0; +https://fortnitetracker.com)', accept: 'text/html,application/xhtml+xml' },
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) return (event.imageUrl = fallbackEventImage(event) || undefined) || null;
     event.imageUrl = extractSocialImage(await response.text()) || undefined;
-    return event.imageUrl || null;
-  } catch { return null; }
+    return event.imageUrl || (event.imageUrl = fallbackEventImage(event) || undefined) || null;
+  } catch { return (event.imageUrl = fallbackEventImage(event) || undefined) || null; }
 }
 
 async function prefetchEventImages(state, guilds, now = Date.now()) {
@@ -265,7 +279,7 @@ function parseCachedEvents(payload, region = 'EU', now = Date.now()) {
   const normalizedRegion = String(region || 'EU').toUpperCase();
   return (Array.isArray(payload) ? payload : []).filter(event => String(event.region || 'EU').toUpperCase() === normalizedRegion && new Date(event.endTime).getTime() > now).map(event => ({
     id: `auto-${event.eventWindowId}`, sourceId: event.eventWindowId, name: event.name, beginTime: event.beginTime, endTime: event.endTime, region: normalizedRegion,
-    mode: event.mode, link: `https://fortnitetracker.com/events/${encodeURIComponent(event.eventId)}`, createdAt: new Date().toISOString(), automatic: true,
+    mode: event.mode, link: `https://fortnitetracker.com/events/${encodeURIComponent(event.eventId)}`, imageUrl: validImageUrl(event.imageUrl) || undefined, createdAt: new Date().toISOString(), automatic: true,
   })).sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime));
 }
 
@@ -287,16 +301,19 @@ async function syncAutomaticEvents(state, guilds) {
   const html = await response.text();
   const regions = [...new Set(guilds.map(guild => store.get(guild.id).fortnite).filter(cfg => cfg.enabled).map(cfg => cfg.region || 'EU'))];
   const byRegion = new Map(regions.map(region => [region, parseAutomaticEvents(html, region)]));
-  if ([...byRegion.values()].every(events => events.length === 0)) {
-    try {
-      const cachedUrl = new URL(EVENTS_CACHE_SOURCE); cachedUrl.searchParams.set('_fayzen', String(Date.now()));
-      const cached = await fetch(cachedUrl, { headers: { accept: 'application/vnd.github.raw+json', 'user-agent': 'FAYZEN Discord Bot', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
-      if (cached.ok) {
-        const parsed = cachedEventsForRegions(await cached.json(), regions);
-        if (parsed) for (const [region, events] of parsed) byRegion.set(region, events);
-      } else console.warn(`[Fortnite] Cache distant indisponible (HTTP ${cached.status}).`);
-    } catch (error) { console.warn(`[Fortnite] Cache distant indisponible : ${error.message}`); }
-  }
+  try {
+    const cachedUrl = new URL(EVENTS_CACHE_SOURCE); cachedUrl.searchParams.set('_fayzen', String(Date.now()));
+    const cached = await fetch(cachedUrl, { headers: { accept: 'application/vnd.github.raw+json', 'user-agent': 'FAYZEN Discord Bot', 'cache-control': 'no-cache' }, signal: AbortSignal.timeout(30_000) });
+    if (cached.ok) {
+      const parsed = cachedEventsForRegions(await cached.json(), regions);
+      if (parsed) for (const [region, cachedEvents] of parsed) {
+        const liveEvents = byRegion.get(region) || [];
+        if (!liveEvents.length) { byRegion.set(region, cachedEvents); continue; }
+        const images = new Map(cachedEvents.filter(event => validImageUrl(event.imageUrl)).map(event => [event.sourceId, event.imageUrl]));
+        for (const event of liveEvents) event.imageUrl = images.get(event.sourceId) || event.imageUrl;
+      }
+    } else console.warn(`[Fortnite] Cache distant indisponible (HTTP ${cached.status}).`);
+  } catch (error) { console.warn(`[Fortnite] Cache distant indisponible : ${error.message}`); }
   if ([...byRegion.values()].every(events => events.length === 0)) {
     const localPayload = readJson(LOCAL_EVENTS_CACHE, []);
     const parsed = cachedEventsForRegions(localPayload, regions);
@@ -445,4 +462,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, resolveEventImage, prefetchEventImages, cupEmbed, parisDateTime } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, fallbackEventImage, resolveEventImage, prefetchEventImages, cupEmbed, parisDateTime } };

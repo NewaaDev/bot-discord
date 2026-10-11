@@ -24,6 +24,7 @@ test('récupère uniquement les visuels publics sûrs des cups', () => {
   const image = 'https://trackercdn.com/unreal/fncs-solos-1920x1080.jpg';
   assert.equal(fortnite.__test.extractSocialImage(`<meta property="og:image" content="${image}">`), image);
   assert.equal(fortnite.__test.extractSocialImage('<meta property="og:image" content="https://example.com/piege.jpg">'), null);
+  assert.match(fortnite.__test.fallbackEventImage({ link: 'https://fortnitetracker.com/events/epicgames_S42_RankedCupSolo_EU' }), /^https:\/\/trackercdn\.com\/unreal\//);
   const embed = fortnite.__test.cupEmbed('test-guild', { name: 'FNCS Solos', region: 'EU', mode: 'Solo', beginTime: '2099-10-12T17:00:00Z', endTime: '2099-10-12T20:00:00Z', link: 'https://fortnitetracker.com/events/test', imageUrl: image });
   assert.equal(embed.toJSON().image.url, image);
   assert.equal(embed.toJSON().fields[1].name, 'Début (heure de Paris)');
