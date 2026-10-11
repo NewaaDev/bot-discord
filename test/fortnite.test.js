@@ -20,6 +20,14 @@ test('génère les liens publics Fortnite Tracker', () => {
   assert.match(fortnite.__test.trackerPowerRankingUrl('EU'), /region=EU/);
 });
 
+test('récupère uniquement les visuels publics sûrs des cups', () => {
+  const image = 'https://trackercdn.com/unreal/fncs-solos-1920x1080.jpg';
+  assert.equal(fortnite.__test.extractSocialImage(`<meta property="og:image" content="${image}">`), image);
+  assert.equal(fortnite.__test.extractSocialImage('<meta property="og:image" content="https://example.com/piege.jpg">'), null);
+  const embed = fortnite.__test.cupEmbed('test-guild', { name: 'FNCS Solos', region: 'EU', mode: 'Solo', beginTime: '2099-10-12T17:00:00Z', endTime: '2099-10-12T20:00:00Z', link: 'https://fortnitetracker.com/events/test', imageUrl: image });
+  assert.equal(embed.toJSON().image.url, image);
+});
+
 test('valide les dates et le lien d’une cup manuelle', () => {
   const event = fortnite.__test.normalizeEvent({ name: 'Solo Victory Cup', beginTime: '2026-10-12T17:00:00Z', endTime: '2026-10-12T20:00:00Z', link: 'https://fortnitetracker.com/events/test', region: 'EU' }, 'test-guild');
   assert.equal(event.name, 'Solo Victory Cup');

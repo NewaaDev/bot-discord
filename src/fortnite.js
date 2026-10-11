@@ -12,6 +12,7 @@ const OFFICIAL_SCHEDULE_SOURCE = 'https://www.fortnite.com/competitive/schedule?
 const EVENTS_CACHE_SOURCE = process.env.FORTNITE_EVENTS_CACHE_SOURCE || 'https://api.github.com/repos/NewaaDev/bot-discord/contents/public/fortnite-events.json?ref=main';
 const LOCAL_EVENTS_CACHE = path.join(__dirname, '..', 'public', 'fortnite-events.json');
 const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
+const IMAGE_HOSTS = new Set(['trackercdn.com', 'www.trackercdn.com', 'cdn2.unrealengine.com', 'cms-assets.unrealengine.com']);
 let timer = null;
 let running = false;
 let lastSyncAt = 0;
@@ -50,6 +51,33 @@ function validUrl(value) {
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && ['fortnitetracker.com', 'www.fortnitetracker.com'].includes(url.hostname) ? url.toString() : null;
+  } catch { return null; }
+}
+
+function validImageUrl(value) {
+  try {
+    const url = new URL(String(value || '').replace(/&amp;/g, '&'));
+    return url.protocol === 'https:' && IMAGE_HOSTS.has(url.hostname.toLowerCase()) ? url.toString() : null;
+  } catch { return null; }
+}
+
+function extractSocialImage(html) {
+  const match = String(html || '').match(/<meta\b[^>]*(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*content=["']([^"']+)["'][^>]*>/i)
+    || String(html || '').match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image|twitter:image)["'][^>]*>/i);
+  return validImageUrl(match?.[1]);
+}
+
+async function resolveEventImage(event) {
+  if (validImageUrl(event.imageUrl)) return event.imageUrl;
+  if (!validUrl(event.link)) return null;
+  try {
+    const response = await fetch(event.link, {
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; FAYZEN/2.0; +https://fortnitetracker.com)', accept: 'text/html,application/xhtml+xml' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return null;
+    event.imageUrl = extractSocialImage(await response.text()) || undefined;
+    return event.imageUrl || null;
   } catch { return null; }
 }
 
@@ -279,15 +307,18 @@ async function send(channel, payload) {
 
 function trackerButton(url, label = 'Voir sur Fortnite Tracker') { return new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setEmoji('🏆').setURL(url)); }
 function cupEmbed(guildId, event, reminder = false) {
-  return new EmbedBuilder().setColor(color(guildId)).setTitle(`${reminder ? '⏰ La cup commence bientôt' : '🏆 Cup Fortnite'} — ${event.name}`).setURL(event.link)
+  const embed = new EmbedBuilder().setColor(color(guildId)).setTitle(`${reminder ? '⏰ La cup commence bientôt' : '🏆 Cup Fortnite'} — ${event.name}`).setURL(event.link)
     .setDescription(event.mode || 'Retrouve les informations et classements sur Fortnite Tracker.')
     .addFields({ name: 'Région', value: event.region, inline: true }, { name: 'Début', value: discordTime(event.beginTime), inline: true }, { name: 'Fin', value: discordTime(event.endTime), inline: true })
     .setFooter({ text: 'FAYZEN • Données gratuites via Fortnite Tracker' });
+  if (validImageUrl(event.imageUrl)) embed.setImage(event.imageUrl);
+  return embed;
 }
 
 async function announceEvent(guild, event) {
   const cfg = store.get(guild.id).fortnite; const channel = guild.channels.cache.get(cfg.upcomingChannelId);
   const mention = cfg.mentionRoleId ? `<@&${cfg.mentionRoleId}>` : undefined;
+  await resolveEventImage(event);
   if (!await send(channel, { content: mention, embeds: [cupEmbed(guild.id, event)], components: [trackerButton(event.link)] })) throw new Error('Salon des cups inaccessible.');
 }
 
@@ -313,13 +344,16 @@ async function pollGuild(guild, state) {
     const reminderAt = new Date(event.beginTime).getTime() - (cfg.reminderMinutes || 15) * 60_000;
     if (!event.remindedAt && now >= reminderAt && now < new Date(event.beginTime).getTime()) {
       const channel = guild.channels.cache.get(cfg.upcomingChannelId); const mention = cfg.mentionRoleId ? `<@&${cfg.mentionRoleId}>` : undefined;
+      await resolveEventImage(event);
       if (await send(channel, { content: mention, embeds: [cupEmbed(guild.id, event, true)], components: [trackerButton(event.link)] })) event.remindedAt = new Date().toISOString();
     }
     if (!event.finishedAt && now >= new Date(event.endTime).getTime()) {
       const channel = guild.channels.cache.get(cfg.resultsChannelId);
+      await resolveEventImage(event);
       const embed = new EmbedBuilder().setColor(color(guild.id)).setTitle(`🏆 Résultats disponibles — ${event.name}`).setURL(event.link)
         .setDescription('La session est terminée. Ouvre Fortnite Tracker pour consulter le classement complet et rechercher ton pseudo.')
         .addFields({ name: 'Région', value: event.region, inline: true }, { name: 'Fin', value: discordTime(event.endTime), inline: true }).setFooter({ text: 'FAYZEN • Résultats Fortnite Tracker' });
+      if (validImageUrl(event.imageUrl)) embed.setImage(event.imageUrl);
       if (await send(channel, { embeds: [embed], components: [trackerButton(event.link, 'Voir le classement')] })) event.finishedAt = new Date().toISOString();
     }
   }
@@ -362,4 +396,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, cupEmbed } };
