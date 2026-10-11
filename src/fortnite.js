@@ -46,6 +46,9 @@ function unlinkEpic(guildId, discordId) {
 }
 
 const discordTime = (value, style = 'F') => `<t:${Math.floor(new Date(value).getTime() / 1000)}:${style}>`;
+const parisDateTime = value => new Intl.DateTimeFormat('fr-FR', {
+  timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+}).format(new Date(value)).replace(/^./, letter => letter.toUpperCase());
 const color = guildId => store.get(guildId).appearance.color || '#5865F2';
 function validUrl(value) {
   try {
@@ -282,20 +285,34 @@ async function syncAutomaticEvents(state, guilds) {
       if (official.ok) byRegion.set(region, parseOfficialSchedule(await official.text(), region));
     }
   }
-  let added = 0; let available = 0;
+  let added = 0; let updated = 0; let available = 0;
   for (const guild of guilds) {
     const cfg = store.get(guild.id).fortnite;
     if (!cfg.enabled) continue;
     state[guild.id] ||= { events: [] };
-    const known = new Set(state[guild.id].events.map(event => event.sourceId || event.id));
+    const known = new Map(state[guild.id].events.map(event => [event.sourceId || event.id, event]));
     const automaticEvents = byRegion.get(cfg.region || 'EU') || [];
     available += automaticEvents.length;
     for (const event of automaticEvents) {
-      if (!known.has(event.sourceId)) { state[guild.id].events.push(event); known.add(event.sourceId); added += 1; }
+      const existing = known.get(event.sourceId);
+      if (!existing) {
+        state[guild.id].events.push(event); known.set(event.sourceId, event); added += 1;
+        continue;
+      }
+      const scheduleChanged = existing.beginTime !== event.beginTime || existing.endTime !== event.endTime;
+      const detailsChanged = scheduleChanged || existing.name !== event.name || existing.mode !== event.mode || existing.link !== event.link || existing.region !== event.region;
+      if (!detailsChanged) continue;
+      Object.assign(existing, { name: event.name, beginTime: event.beginTime, endTime: event.endTime, region: event.region, mode: event.mode, link: event.link, automatic: true, scheduleUpdatedAt: new Date().toISOString() });
+      if (scheduleChanged && new Date(event.endTime).getTime() > Date.now()) {
+        delete existing.announcedAt;
+        delete existing.remindedAt;
+        delete existing.finishedAt;
+      }
+      updated += 1;
     }
   }
-  console.log(`✅ Calendrier Fortnite synchronisé automatiquement (${added} nouvelle(s), ${available} disponible(s))`);
-  return added;
+  console.log(`✅ Calendrier Fortnite synchronisé automatiquement (${added} nouvelle(s), ${updated} corrigée(s), ${available} disponible(s))`);
+  return added + updated;
 }
 
 async function send(channel, payload) {
@@ -309,7 +326,11 @@ function trackerButton(url, label = 'Voir sur Fortnite Tracker') { return new Ac
 function cupEmbed(guildId, event, reminder = false) {
   const embed = new EmbedBuilder().setColor(color(guildId)).setTitle(`${reminder ? '⏰ La cup commence bientôt' : '🏆 Cup Fortnite'} — ${event.name}`).setURL(event.link)
     .setDescription(event.mode || 'Retrouve les informations et classements sur Fortnite Tracker.')
-    .addFields({ name: 'Région', value: event.region, inline: true }, { name: 'Début', value: discordTime(event.beginTime), inline: true }, { name: 'Fin', value: discordTime(event.endTime), inline: true })
+    .addFields(
+      { name: 'Région', value: event.region, inline: true },
+      { name: 'Début (heure de Paris)', value: `${parisDateTime(event.beginTime)}\n${discordTime(event.beginTime, 'R')}`, inline: true },
+      { name: 'Fin (heure de Paris)', value: parisDateTime(event.endTime), inline: true },
+    )
     .setFooter({ text: 'FAYZEN • Données gratuites via Fortnite Tracker' });
   if (validImageUrl(event.imageUrl)) embed.setImage(event.imageUrl);
   return embed;
@@ -352,7 +373,7 @@ async function pollGuild(guild, state) {
       await resolveEventImage(event);
       const embed = new EmbedBuilder().setColor(color(guild.id)).setTitle(`🏆 Résultats disponibles — ${event.name}`).setURL(event.link)
         .setDescription('La session est terminée. Ouvre Fortnite Tracker pour consulter le classement complet et rechercher ton pseudo.')
-        .addFields({ name: 'Région', value: event.region, inline: true }, { name: 'Fin', value: discordTime(event.endTime), inline: true }).setFooter({ text: 'FAYZEN • Résultats Fortnite Tracker' });
+        .addFields({ name: 'Région', value: event.region, inline: true }, { name: 'Fin (heure de Paris)', value: parisDateTime(event.endTime), inline: true }).setFooter({ text: 'FAYZEN • Résultats Fortnite Tracker' });
       if (validImageUrl(event.imageUrl)) embed.setImage(event.imageUrl);
       if (await send(channel, { embeds: [embed], components: [trackerButton(event.link, 'Voir le classement')] })) event.finishedAt = new Date().toISOString();
     }
@@ -396,4 +417,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, cupEmbed } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, cupEmbed, parisDateTime } };

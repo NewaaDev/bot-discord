@@ -26,6 +26,12 @@ test('récupère uniquement les visuels publics sûrs des cups', () => {
   assert.equal(fortnite.__test.extractSocialImage('<meta property="og:image" content="https://example.com/piege.jpg">'), null);
   const embed = fortnite.__test.cupEmbed('test-guild', { name: 'FNCS Solos', region: 'EU', mode: 'Solo', beginTime: '2099-10-12T17:00:00Z', endTime: '2099-10-12T20:00:00Z', link: 'https://fortnitetracker.com/events/test', imageUrl: image });
   assert.equal(embed.toJSON().image.url, image);
+  assert.equal(embed.toJSON().fields[1].name, 'Début (heure de Paris)');
+  assert.match(embed.toJSON().fields[1].value, /12 octobre 2099 à 19:00/);
+});
+
+test('affiche toujours les horaires Fortnite dans le fuseau de Paris', () => {
+  assert.equal(fortnite.__test.parisDateTime('2026-10-12T17:00:00Z'), 'Lundi 12 octobre 2026 à 19:00');
 });
 
 test('valide les dates et le lien d’une cup manuelle', () => {
