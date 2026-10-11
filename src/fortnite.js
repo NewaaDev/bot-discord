@@ -12,6 +12,7 @@ const OFFICIAL_SCHEDULE_SOURCE = 'https://www.fortnite.com/competitive/schedule?
 const EVENTS_CACHE_SOURCE = process.env.FORTNITE_EVENTS_CACHE_SOURCE || 'https://api.github.com/repos/NewaaDev/bot-discord/contents/public/fortnite-events.json?ref=main';
 const LOCAL_EVENTS_CACHE = path.join(__dirname, '..', 'public', 'fortnite-events.json');
 const ANNOUNCE_AHEAD_MS = 24 * 60 * 60_000;
+const IMAGE_PREFETCH_AHEAD_MS = 72 * 60 * 60_000;
 const IMAGE_HOSTS = new Set(['trackercdn.com', 'www.trackercdn.com', 'cdn2.unrealengine.com', 'cms-assets.unrealengine.com']);
 let timer = null;
 let running = false;
@@ -82,6 +83,32 @@ async function resolveEventImage(event) {
     event.imageUrl = extractSocialImage(await response.text()) || undefined;
     return event.imageUrl || null;
   } catch { return null; }
+}
+
+async function prefetchEventImages(state, guilds, now = Date.now()) {
+  const eventsByLink = new Map();
+  for (const guild of guilds) {
+    const cfg = store.get(guild.id).fortnite;
+    if (!cfg.enabled) continue;
+    for (const event of state[guild.id]?.events || []) {
+      const beginAt = new Date(event.beginTime).getTime();
+      const endAt = new Date(event.endTime).getTime();
+      if (!event.automatic || validImageUrl(event.imageUrl) || !validUrl(event.link)
+        || endAt <= now || beginAt > now + IMAGE_PREFETCH_AHEAD_MS) continue;
+      const linked = eventsByLink.get(event.link) || [];
+      linked.push(event);
+      eventsByLink.set(event.link, linked);
+    }
+  }
+  let resolved = 0; let unavailable = 0;
+  for (const linkedEvents of eventsByLink.values()) {
+    const imageUrl = await resolveEventImage(linkedEvents[0]);
+    if (!imageUrl) { unavailable += 1; continue; }
+    for (const event of linkedEvents) event.imageUrl = imageUrl;
+    resolved += 1;
+  }
+  if (eventsByLink.size) console.log(`[Fortnite] Illustrations préchargées : ${resolved} tournoi(s), ${unavailable} indisponible(s).`);
+  return resolved;
 }
 
 function normalizeEvent(body, guildId) {
@@ -311,6 +338,7 @@ async function syncAutomaticEvents(state, guilds) {
       updated += 1;
     }
   }
+  await prefetchEventImages(state, guilds);
   console.log(`✅ Calendrier Fortnite synchronisé automatiquement (${added} nouvelle(s), ${updated} corrigée(s), ${available} disponible(s))`);
   return added + updated;
 }
@@ -417,4 +445,4 @@ async function publishPlayerLinks(guild, discordId) {
   await send(channel, { embeds: [embed], components }); return { username: account.username };
 }
 
-module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, cupEmbed, parisDateTime } };
+module.exports = { start, poll, saveEpicAccount, getEpicAccount, unlinkEpic, publishPlayerLinks, addEvent, listEvents, removeEvent, announceEvent, __test: { cleanUsername, normalizeEvent, trackerProfileUrl, trackerEventsUrl, trackerPowerRankingUrl, extractAssignedJson, parseAutomaticEvents, parseOfficialSchedule, parseCachedEvents, eventName, validImageUrl, extractSocialImage, resolveEventImage, prefetchEventImages, cupEmbed, parisDateTime } };
