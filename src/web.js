@@ -58,7 +58,10 @@ function redirectUri(req) {
   // utilisée pour ouvrir le panel.
   const forwardedHost = String(req.get('x-forwarded-host') || '').split(',')[0].trim();
   const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim();
-  const publicHost = forwardedHost || req.get('host');
+  const detectedHost = forwardedHost || req.get('host');
+  const publicHost = /^(localhost|127\.0\.0\.1)(:|$)/i.test(detectedHost || '')
+    ? '151.242.159.7:2810'
+    : detectedHost;
   const publicProto = forwardedProto || req.protocol;
   const base = configured && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(configured)
     ? configured
