@@ -33,16 +33,6 @@ const DEFAULTS = {
     dmOnSanction: true,
     logChannelId: null,
   },
-  fortnite: {
-    enabled: false,
-    region: 'EU',
-    upcomingChannelId: null,
-    resultsChannelId: null,
-    playerChannelId: null,
-    mentionRoleId: null,
-    reminderMinutes: 15,
-    topCount: 10,
-  },
   protection: {
     // userId du membre protégé -> liste des userId qu'il a bloqués dans Fayzen
     blocks: {},
@@ -76,6 +66,14 @@ let cache = {};
 function load() {
   try {
     cache = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    let cleaned = false;
+    for (const value of Object.values(cache)) {
+      if (value && typeof value === 'object' && Object.hasOwn(value, 'fortnite')) {
+        delete value.fortnite;
+        cleaned = true;
+      }
+    }
+    if (cleaned) save();
   } catch {
     cache = {};
   }
@@ -104,7 +102,10 @@ module.exports = {
   },
 
   set(guildId, patch) {
-    cache[guildId] = merge(cache[guildId] || {}, patch);
+    const sanitized = { ...(patch || {}) };
+    delete sanitized.fortnite;
+    cache[guildId] = merge(cache[guildId] || {}, sanitized);
+    delete cache[guildId].fortnite;
     save();
     return this.get(guildId);
   },

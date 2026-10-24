@@ -46,7 +46,6 @@
       <button class="nav-item" data-view="welcome">Bienvenue</button>
       <button class="nav-item" data-view="panel">Panneau</button>
       <button class="nav-item" data-view="appearance">Apparence</button>
-      <button class="nav-item" data-view="fortnite">Fortnite</button>
       <button class="nav-item" data-view="bot">Présence</button>
     </nav>
 
@@ -293,41 +292,6 @@
             <option value="invisible">Invisible</option>
           </select>
         </div>
-      </div>
-    </section>
-
-    <section class="view hidden" data-view="fortnite">
-      <header class="view-head"><h2>Fortnite compétitif</h2><p>Organisation gratuite des cups avec liens Fortnite Tracker.</p></header>
-      <div class="alert"><b>Mode gratuit.</b> FAYZEN envoie les annonces et rappels, puis ouvre Fortnite Tracker pour consulter les classements.</div>
-      <div class="split">
-        <div class="card">
-          <h3>Salons et rappels</h3>
-          <label class="check"><input type="checkbox" data-path="fortnite.enabled"><span>Activer les notifications Fortnite</span></label>
-          <div class="field"><label for="fn-region">Région</label><select id="fn-region" data-path="fortnite.region"><option value="EU">Europe</option><option value="NAC">Amérique du Nord Centrale</option><option value="NAW">Amérique du Nord Ouest</option><option value="OCE">Océanie</option><option value="BR">Brésil</option><option value="ASIA">Asie</option><option value="ME">Moyen-Orient</option></select></div>
-          <div class="field"><label for="fn-upcoming">Cups à venir</label><select id="fn-upcoming" data-path="fortnite.upcomingChannelId"></select></div>
-          <div class="field"><label for="fn-results">Classements terminés</label><select id="fn-results" data-path="fortnite.resultsChannelId"></select></div>
-          <div class="field"><label for="fn-player">Classements personnels</label><select id="fn-player" data-path="fortnite.playerChannelId"></select></div>
-          <div class="field"><label for="fn-role">Rôle à notifier</label><select id="fn-role" data-path="fortnite.mentionRoleId"></select></div>
-          <div class="row"><button class="btn btn-primary" id="fn-create">Créer automatiquement les salons</button><button class="btn btn-ghost" id="fn-test">Vérifier les rappels</button></div>
-        </div>
-        <div class="card">
-          <h3>Mon profil Fortnite Tracker</h3>
-          <p class="card-note">Entre uniquement ton pseudo Epic. Aucun mot de passe ni jeton n'est demandé.</p>
-          <div id="fn-epic-empty" class="row"><input id="fn-epic-username" class="grow" maxlength="32" placeholder="Pseudo Epic Games"><button class="btn btn-primary" id="fn-connect">Enregistrer</button></div>
-          <div id="fn-epic-linked" class="hidden">
-            <div class="epic-account"><span class="dot live"></span><div><b id="fn-epic-name">—</b><small>Pseudo Epic enregistré</small></div></div>
-            <div class="row"><button class="btn btn-primary" id="fn-ranking">Publier mes liens Tracker</button><button class="btn btn-ghost" id="fn-unlink">Supprimer</button></div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Ajouter une cup</h3>
-        <p class="card-note">Copie le lien Fortnite Tracker de la cup. FAYZEN publie l'annonce immédiatement, rappelle son début et signale la disponibilité des résultats à la fin.</p>
-        <div class="row"><div class="field grow"><label for="fn-cup-name">Nom</label><input id="fn-cup-name" placeholder="Solo Victory Cup"></div><div class="field grow"><label for="fn-cup-mode">Mode</label><input id="fn-cup-mode" placeholder="Solo • Battle Royale"></div></div>
-        <div class="row"><div class="field grow"><label for="fn-cup-start">Début</label><input id="fn-cup-start" type="datetime-local"></div><div class="field grow"><label for="fn-cup-end">Fin</label><input id="fn-cup-end" type="datetime-local"></div></div>
-        <div class="field"><label for="fn-cup-link">Lien Fortnite Tracker</label><input id="fn-cup-link" type="url" placeholder="https://fortnitetracker.com/events/..."></div>
-        <button class="btn btn-primary" id="fn-cup-add">Annoncer cette cup</button>
-        <div id="fn-events" class="types"></div>
       </div>
     </section>
 

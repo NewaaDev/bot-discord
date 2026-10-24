@@ -23,6 +23,18 @@ function startBot() {
   }
 }
 
+function removeLegacyFortniteFiles() {
+  for (const relativePath of [
+    'fortnite-state.json',
+    'fortnite-accounts.json',
+    'src/fortnite.js',
+    'public/fortnite-events.json',
+    'scripts/update-fortnite-events.js',
+  ]) {
+    fs.rmSync(path.join(root, relativePath), { force: true });
+  }
+}
+
 (async () => {
   try {
     console.log('🔄 Recherche de la dernière version sur GitHub…');
@@ -41,6 +53,7 @@ function startBot() {
     fs.rmSync(archive, { force: true });
   }
 
+  removeLegacyFortniteFiles();
   startBot();
 })();
 

@@ -136,7 +136,6 @@ async function loadGuild() {
   renderPreview();
   markDirty();
   loadTickets();
-  loadFortniteStatus();
 }
 
 // ─────────────────────────────────────────────
@@ -163,10 +162,6 @@ function fillSelects() {
   options($('#t-log'), guild.textChannels, 'Ne rien enregistrer');
   options($('#m-log'), guild.textChannels, 'Ne rien enregistrer');
   options($('#panel-channel'), guild.textChannels, 'Choisir un salon…');
-  options($('#fn-upcoming'), guild.textChannels, 'Choisir un salon…');
-  options($('#fn-results'), guild.textChannels, 'Choisir un salon…');
-  options($('#fn-player'), guild.textChannels, 'Choisir un salon…');
-  options($('#fn-role'), guild.roles, 'Ne notifier aucun rôle');
 }
 
 // ─────────────────────────────────────────────
@@ -453,92 +448,6 @@ $('#send-panel').addEventListener('click', async () => {
 $('#logout').addEventListener('click', async () => {
   await api('/auth/logout', { method: 'POST' });
   location.reload();
-});
-
-// ─────────────────────────────────────────────
-//  FORTNITE COMPÉTITIF
-// ─────────────────────────────────────────────
-async function loadFortniteStatus() {
-  try {
-    const status = await api(g('/fortnite/status'));
-    $('#fn-epic-empty').classList.toggle('hidden', Boolean(status.epic));
-    $('#fn-epic-linked').classList.toggle('hidden', !status.epic);
-    if (status.epic) $('#fn-epic-name').textContent = status.epic.username;
-    await loadFortniteEvents();
-  } catch { /* La vue reste utilisable même si le fournisseur est indisponible. */ }
-}
-
-$('#fn-create').addEventListener('click', async (event) => {
-  event.currentTarget.disabled = true;
-  try {
-    const result = await api(g('/fortnite/channels'), { method: 'POST' });
-    config = result.config;
-    draft.fortnite = { ...draft.fortnite, ...result.channels };
-    guild = await api(g());
-    fillSelects(); bindFields(); markDirty();
-    toast('Catégorie et salons Fortnite créés');
-  } catch (err) { toast(err.message, true); }
-  event.currentTarget.disabled = false;
-});
-
-$('#fn-test').addEventListener('click', async (event) => {
-  event.currentTarget.disabled = true;
-  try { await api(g('/fortnite/test'), { method: 'POST' }); toast('Synchronisation Fortnite terminée'); }
-  catch (err) { toast(err.message, true); }
-  event.currentTarget.disabled = false;
-});
-
-$('#fn-connect').addEventListener('click', async () => {
-  try {
-    const username = $('#fn-epic-username').value.trim();
-    const result = await api(g('/fortnite/epic'), { method: 'PUT', body: JSON.stringify({ username }) });
-    await loadFortniteStatus();
-    toast(`Pseudo Epic ${result.epic.username} enregistré`);
-  } catch (err) { toast(err.message, true); }
-});
-
-$('#fn-ranking').addEventListener('click', async (event) => {
-  event.currentTarget.disabled = true;
-  try { const result = await api(g('/fortnite/ranking'), { method: 'POST' }); toast(`Liens Fortnite Tracker de ${result.username} publiés`); }
-  catch (err) { toast(err.message, true); }
-  event.currentTarget.disabled = false;
-});
-
-$('#fn-unlink').addEventListener('click', async () => {
-  if (!confirm('Supprimer ce pseudo Epic de FAYZEN ?')) return;
-  try { await api(g('/fortnite/epic'), { method: 'DELETE' }); await loadFortniteStatus(); toast('Compte Epic déconnecté'); }
-  catch (err) { toast(err.message, true); }
-});
-
-async function loadFortniteEvents() {
-  const events = await api(g('/fortnite/events')).catch(() => []);
-  const box = $('#fn-events');
-  box.innerHTML = events.length ? '' : '<div class="empty">Aucune cup enregistrée.</div>';
-  events.forEach(event => {
-    const row = document.createElement('div'); row.className = 'type-row';
-    const details = document.createElement('div'); details.className = 'grow';
-    const name = document.createElement('b'); name.textContent = event.name;
-    const time = document.createElement('small'); time.textContent = `${new Date(event.beginTime).toLocaleString('fr-FR')} · ${event.region}`;
-    details.append(name, time);
-    const link = document.createElement('a'); link.className = 'btn btn-ghost'; link.href = event.link; link.target = '_blank'; link.rel = 'noopener'; link.textContent = 'Tracker';
-    const remove = document.createElement('button'); remove.className = 'type-del'; remove.title = 'Supprimer'; remove.textContent = '×';
-    row.append(details, link, remove);
-    row.querySelector('.type-del').addEventListener('click', async () => { await api(g(`/fortnite/events/${event.id}`), { method: 'DELETE' }); await loadFortniteEvents(); toast('Cup supprimée'); });
-    box.appendChild(row);
-  });
-}
-
-$('#fn-cup-add').addEventListener('click', async (event) => {
-  event.currentTarget.disabled = true;
-  try {
-    const start = $('#fn-cup-start').value;
-    const end = $('#fn-cup-end').value;
-    const body = { name: $('#fn-cup-name').value, mode: $('#fn-cup-mode').value, beginTime: start ? new Date(start).toISOString() : '', endTime: end ? new Date(end).toISOString() : '', link: $('#fn-cup-link').value, region: draft.fortnite.region };
-    await api(g('/fortnite/events'), { method: 'POST', body: JSON.stringify(body) });
-    for (const id of ['fn-cup-name', 'fn-cup-mode', 'fn-cup-start', 'fn-cup-end', 'fn-cup-link']) $(`#${id}`).value = '';
-    await loadFortniteEvents(); toast('Cup annoncée dans Discord');
-  } catch (err) { toast(err.message, true); }
-  event.currentTarget.disabled = false;
 });
 
 // ─────────────────────────────────────────────
